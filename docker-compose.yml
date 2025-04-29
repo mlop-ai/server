@@ -1,0 +1,156 @@
+version: '3'
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest-alpine
+    # image: altinity/clickhouse-server:24.8.14.10459.altinitystable-alpine
+    # ports:
+    #   - "8123:8123"
+    #   - "9000:9000"
+    volumes:
+      - ./.mlop/clickhouse:/var/lib/clickhouse
+    networks:
+      - mlop_network
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    env_file:
+      - .env
+
+  db:
+    image: supabase/postgres:17.4.1.017
+    # ports:
+    #   - "5432:5432"
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    networks:
+      - mlop_network
+    volumes:
+      - ./.mlop/postgresql:/var/lib/postgresql
+    env_file:
+      - .env
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "postgres", "-d", "postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+      # - "9001:9001"
+    networks:
+      - mlop_network
+    volumes:
+      - ./.mlop/minio:/data
+    env_file:
+      - .env
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: [ "CMD", "mc", "ready", "local" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio_create:
+    image: minio/mc
+    networks:
+      - mlop_network
+    depends_on:
+      - minio
+    env_file:
+      - .env
+    entrypoint: >
+      /bin/sh -c " until (/usr/bin/mc config host add myminio http://minio:9000 $STORAGE_ACCESS_KEY_ID $STORAGE_SECRET_ACCESS_KEY) do echo '...waiting...' && sleep 1; done; /usr/bin/mc mb myminio/$STORAGE_BUCKET; /usr/bin/mc anonymous set public myminio/$STORAGE_BUCKET; exit 0; "
+
+  ingest:
+    build:
+      context: ./ingest
+      dockerfile: Dockerfile
+    ports:
+      - "3003:3003"
+    networks:
+      - mlop_network
+    depends_on:
+      - clickhouse
+      - db
+      - minio
+    env_file:
+      - .env
+    entrypoint: [ "/bin/sh", "-c", "/opt/docker-setup/create_tables.sh; exec server-rs" ]
+
+  backend:
+    build:
+      context: ./web/server
+      dockerfile: Dockerfile
+      # dockerfile: Dockerfile.bun
+      args:
+        - IS_DOCKER=${IS_DOCKER}
+        - STORAGE_ENDPOINT=${STORAGE_ENDPOINT}
+        - STORAGE_ACCESS_KEY_ID=${STORAGE_ACCESS_KEY_ID}
+        - STORAGE_SECRET_ACCESS_KEY=${STORAGE_SECRET_ACCESS_KEY}
+        - STORAGE_BUCKET=${STORAGE_BUCKET}
+        - CLICKHOUSE_URL=${CLICKHOUSE_URL}
+        - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+        - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+        - DATABASE_URL=${DATABASE_URL}
+        - DATABASE_DIRECT_URL=${DATABASE_DIRECT_URL}
+        - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+        - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+        - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+        - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+        - PUBLIC_URL=${PUBLIC_URL}
+        - BETTER_AUTH_URL=${BETTER_AUTH_URL}
+        - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+    ports:
+      - "3001:3001"
+    networks:
+      - mlop_network
+    depends_on:
+      - clickhouse
+      - db
+      - minio
+    entrypoint: [ "/bin/sh", "-c", "corepack enable pnpm && pnpm exec prisma migrate dev && node ./.next/standalone/server.js" ]
+    # entrypoint: [ "/bin/sh", "-c", "bun ./.next/standalone/server.js" ]
+    restart: unless-stopped
+    environment:
+      - MALLOC_ARENA_MAX=1 # TODO: specific to glibc
+    env_file:
+      - .env
+
+  frontend:
+    build:
+      context: ./web/app
+      dockerfile: Dockerfile
+      args:
+        - VITE_IS_DOCKER=true
+        - VITE_ENV=production
+        - VITE_SERVER_URL=${PUBLIC_URL}
+    ports:
+      - "3000:3000"
+    networks:
+      - mlop_network
+    depends_on: # TODO: check build time env vars
+      - backend
+    env_file:
+      - .env
+
+  py:
+    build:
+      context: ./py
+      dockerfile: Dockerfile
+    ports:
+      - "3004:3004"
+    networks:
+      - mlop_network
+    depends_on:
+      - clickhouse
+      - db
+    env_file:
+      - .env
+
+networks:
+  mlop_network:
+    name: mlop_network
+    driver: bridge
