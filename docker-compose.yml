@@ -124,9 +124,9 @@ services:
       context: ./web/app
       dockerfile: Dockerfile
       args:
-        - VITE_IS_DOCKER=true
+        - VITE_IS_DOCKER=${VITE_IS_DOCKER}
+        - VITE_SERVER_URL=${VITE_SERVER_URL}
         - VITE_ENV=production
-        - VITE_SERVER_URL=${PUBLIC_URL}
     ports:
       - "3000:3000"
     networks:

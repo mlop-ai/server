@@ -21,6 +21,7 @@ sudo port install docker-compose
 ```bash
 git clone --recurse-submodules https://github.com/mlop-ai/server.git
 cd server
+git submodule update --rebase --remote
 ```
 
 2. Edit the `.env` file
@@ -40,7 +41,7 @@ The server will be swiftly available at `http://localhost:3000`.
 To use the self-hosted server with the client, simply initialize the client with
 
 ```python
-mlop.init(settings={"_host": "localhost"}) # or a specified host matching the CORS policy of the server set by .env
+mlop.init(settings={"host": "localhost"}) # or a specified host matching the CORS policy of the server set by .env
 ```
 
 ### 📲 What's Inside?
