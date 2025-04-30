@@ -3,6 +3,7 @@
 cd $(dirname $0)
 WORKDIR="$(realpath .)/.mlop"
 SUFFIX="-internal"
+# git submodule update --init
 
 sync() {
     SERVICE=$1

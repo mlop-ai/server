@@ -1,12 +1,12 @@
 ## mlop server
 
-This is the collection of services that allow any individual to self-host their own instance of the MLOP server. It can be used to store, analyze, visualize, and share any data recorded by the latest MLOP clients or other platforms. It's super easy to get started and we welcome you to try it yourself! All you need is a containerized environment and a minute to spare.
+This is the collection of services that allow any individual to self-host their own instance of the **mlop** server. It can be used to store, analyze, visualize, and share any data recorded by the latest **mlop** clients or other platforms. It's super easy to get started and we welcome you to try it yourself! All you need is a containerized environment and a minute to spare.
 
 For a managed instance with better scalability, stability and support, please visit [mlop.ai](https://mlop.ai) or contact us at [founders@mlop.ai](mailto:founders@mlop.ai).
 
 ### 🚀 Getting Started
 
-0. Ensure you have `docker-compose` (or `podman-compose`) and the current user has access to Docker daemon
+#### 0. Ensure you have `docker-compose` (or `podman-compose`) and the current user has access to Docker daemon
 
 ```bash
 sudo pacman -S docker-compose
@@ -16,7 +16,7 @@ sudo apt install docker-compose
 sudo port install docker-compose
 ```
 
-1. Get the repository
+#### 1. Get the repository
 
 ```bash
 git clone --recurse-submodules https://github.com/mlop-ai/server.git
@@ -24,13 +24,13 @@ cd server
 git submodule update --rebase --remote
 ```
 
-2. Edit the `.env` file
+#### 2. Edit the `.env` file
 
 ```bash
 cp .env.example .env
 ```
 
-3. Let's go!
+#### 3. Let's go!
 
 ```bash
 sudo docker-compose --env-file .env up --build
