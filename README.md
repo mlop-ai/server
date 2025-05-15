@@ -35,6 +35,10 @@ cp .env.example .env
 ```bash
 sudo docker-compose --env-file .env up --build
 ```
+or to have more granular control over the services,
+```bash
+sudo docker-compose --env-file .env up -d traefik clickhouse py ingest
+```
 
 The server will be swiftly available at `http://localhost:3000`. 
 

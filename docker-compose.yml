@@ -6,7 +6,7 @@ services:
     # image: altinity/clickhouse-server:24.8.14.10459.altinitystable-alpine
     # ports:
     #   - "8123:8123"
-    #   - "9000:9000"
+    #   - "9001:9000"
     volumes:
       - ./.mlop/clickhouse:/var/lib/clickhouse
     networks:
@@ -17,6 +17,15 @@ services:
         hard: 262144
     env_file:
       - .env
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.clickhouse_secure.rule=Host(`${TRAEFIK_CLICKHOUSE_HOST}`)"
+      - "traefik.http.routers.clickhouse_secure.entrypoints=websecure_ch"
+      - "traefik.http.routers.clickhouse_secure.service=clickhouse_svc"
+      - "traefik.http.routers.clickhouse_secure.tls=true"
+      - "traefik.http.routers.clickhouse_secure.tls.certresolver=myresolver"
+      - "traefik.http.services.clickhouse_svc.loadbalancer.server.port=8123"
+      - "traefik.http.services.clickhouse_svc.loadbalancer.server.scheme=http"
 
   db:
     image: supabase/postgres:17.4.1.017
@@ -63,6 +72,35 @@ services:
       - .env
     entrypoint: >
       /bin/sh -c " until (/usr/bin/mc config host add myminio http://minio:9000 $STORAGE_ACCESS_KEY_ID $STORAGE_SECRET_ACCESS_KEY) do echo '...waiting...' && sleep 1; done; /usr/bin/mc mb myminio/$STORAGE_BUCKET; /usr/bin/mc anonymous set public myminio/$STORAGE_BUCKET; exit 0; "
+
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    command:
+      - "--api.dashboard=true"
+      - "--log.level=INFO"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure_ch.address=:8443"
+      - "--entrypoints.websecure_py.address=:443"
+      - "--certificatesresolvers.myresolver.acme.email=${TRAEFIK_ACME_EMAIL}"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
+    ports:
+      - "80:80"     # for http challenge
+      - "8443:8443" # clickhouse
+      - "443:443"   # py
+      - "8080:8080" # dashboard
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./.mlop/traefik/letsencrypt:/letsencrypt"
+    networks:
+      - mlop_network
+    env_file:
+      - .env
+    restart: unless-stopped
 
   ingest:
     build:
@@ -149,6 +187,15 @@ services:
       - db
     env_file:
       - .env
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.py_secure.rule=Host(`${TRAEFIK_PY_HOST}`)"
+      - "traefik.http.routers.py_secure.entrypoints=websecure_py"
+      - "traefik.http.routers.py_secure.service=py_svc"
+      - "traefik.http.routers.py_secure.tls=true"
+      - "traefik.http.routers.py_secure.tls.certresolver=myresolver"
+      - "traefik.http.services.py_svc.loadbalancer.server.port=3004"
+      - "traefik.http.services.py_svc.loadbalancer.server.scheme=http"
 
 networks:
   mlop_network:
