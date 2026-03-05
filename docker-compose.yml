@@ -1,9 +1,6 @@
-version: '3'
-
 services:
   clickhouse:
     image: clickhouse/clickhouse-server:latest-alpine
-    # image: altinity/clickhouse-server:24.8.14.10459.altinitystable-alpine
     # ports:
     #   - "8123:8123"
     #   - "9001:9000"
@@ -26,6 +23,7 @@ services:
       - "traefik.http.routers.clickhouse_secure.tls.certresolver=myresolver"
       - "traefik.http.services.clickhouse_svc.loadbalancer.server.port=8123"
       - "traefik.http.services.clickhouse_svc.loadbalancer.server.scheme=http"
+    restart: unless-stopped
 
   db:
     image: supabase/postgres:17.4.1.017
@@ -43,6 +41,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   minio:
     image: minio/minio:latest
@@ -57,10 +56,11 @@ services:
       - .env
     command: server /data --console-address ":9001"
     healthcheck:
-      test: [ "CMD", "mc", "ready", "local" ]
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   minio_create:
     image: minio/mc
@@ -71,7 +71,7 @@ services:
     env_file:
       - .env
     entrypoint: >
-      /bin/sh -c " until (/usr/bin/mc config host add myminio http://minio:9000 $STORAGE_ACCESS_KEY_ID $STORAGE_SECRET_ACCESS_KEY) do echo '...waiting...' && sleep 1; done; /usr/bin/mc mb myminio/$STORAGE_BUCKET; /usr/bin/mc anonymous set public myminio/$STORAGE_BUCKET; exit 0; "
+      /bin/sh -c " until (/usr/bin/mc alias set myminio http://minio:9000 $STORAGE_ACCESS_KEY_ID $STORAGE_SECRET_ACCESS_KEY) do echo '...waiting...' && sleep 1; done; /usr/bin/mc mb myminio/$STORAGE_BUCKET; /usr/bin/mc anonymous set public myminio/$STORAGE_BUCKET; exit 0; "
 
   traefik:
     image: traefik:latest
@@ -89,10 +89,10 @@ services:
       - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
       - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
     ports:
-      - "80:80"     # for http challenge
+      - "80:80" # for http challenge
       - "8443:8443" # clickhouse
-      - "443:443"   # py
-      - "8080:8080" # dashboard
+      - "443:443" # py
+    # - "8080:8080" # dashboard
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "./.mlop/traefik/letsencrypt:/letsencrypt"
@@ -111,13 +111,16 @@ services:
     networks:
       - mlop_network
     depends_on:
-      - clickhouse
-      - db
-      - minio
+      clickhouse:
+        condition: service_started
+      minio:
+        condition: service_started
+      db:
+        condition: service_healthy
     env_file:
       - .env
     entrypoint: [ "/bin/sh", "-c", "/opt/docker-setup/create_tables.sh; exec server-rs" ]
-
+    restart: unless-stopped
   backend:
     build:
       context: ./web/server
@@ -151,11 +154,11 @@ services:
       - minio
     entrypoint: [ "/bin/sh", "-c", "corepack enable pnpm && pnpm exec prisma migrate dev && node ./.next/standalone/server.js" ]
     # entrypoint: [ "/bin/sh", "-c", "bun ./.next/standalone/server.js" ]
-    restart: unless-stopped
     environment:
       - MALLOC_ARENA_MAX=1 # TODO: specific to glibc
     env_file:
       - .env
+    restart: unless-stopped
 
   frontend:
     build:
@@ -169,17 +172,20 @@ services:
       - "3000:3000"
     networks:
       - mlop_network
-    depends_on: # TODO: check build time env vars
+    depends_on:
+      # TODO: check build time env vars
       - backend
     env_file:
       - .env
-
+    restart: unless-stopped
   py:
     build:
       context: ./py
       dockerfile: Dockerfile
     ports:
       - "3004:3004"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - mlop_network
     depends_on:
